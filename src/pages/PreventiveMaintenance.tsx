@@ -346,18 +346,6 @@ const Maintenance = () => {
   }, []);
 
   const layout: Partial<Layout> = {
-   /* xaxis: {
-      title: {
-        text: 'Time',
-        font: { size: 14, color: '#6e6b7b', family: 'Montserrat'},
-      },
-      type: 'date',
-      gridcolor: '#eee',
-      tickfont: { size: 12, color: '#666', family: 'IBM Plex Mono' },
-      showgrid: true,
-      gridwidth: 1,
-     // rangeslider: { visible: false },
-    },*/
     yaxis: {
       title: {
         text: 'Power (W)',
