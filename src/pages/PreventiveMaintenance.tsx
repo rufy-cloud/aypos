@@ -29,7 +29,7 @@ interface DataItem {
   flag: string;
 }
 
-const Maintenance = () => {
+const PreventiveMaintenance = () => {
   const theme = useTheme();
   const [chartData, setChartData] = useState<Partial<PlotData>[]>([]);
   const [currentFlag, setCurrentFlag] = useState<string>('');
@@ -346,6 +346,18 @@ const Maintenance = () => {
   }, []);
 
   const layout: Partial<Layout> = {
+   /* xaxis: {
+      title: {
+        text: 'Time',
+        font: { size: 14, color: '#6e6b7b', family: 'Montserrat'},
+      },
+      type: 'date',
+      gridcolor: '#eee',
+      tickfont: { size: 12, color: '#666', family: 'IBM Plex Mono' },
+      showgrid: true,
+      gridwidth: 1,
+     // rangeslider: { visible: false },
+    },*/
     yaxis: {
       title: {
         text: 'Power (W)',
@@ -602,4 +614,4 @@ Preventive Maintenance
   );
 };
 
-export default Maintenance;
+export default PreventiveMaintenance;
