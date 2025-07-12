@@ -1,553 +1,354 @@
-import React, { useEffect, useState } from "react";
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Box,
-  Button,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  Grid,
-  InputLabel,
-  MenuItem,
-  Select,
-  SelectChangeEvent,
-  Snackbar,
-  ToggleButton,
-  ToggleButtonGroup,
-  Tooltip,
-  Typography,
-  Alert,
-} from "@mui/material";
-import {
-  CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
-  PlayArrow as PlayArrowIcon,
-  Stop as StopIcon,
-  Thermostat as ThermostatIcon,
-  Timeline as TimelineIcon,
-  Speed as SpeedIcon,
-  Build as BuildIcon,
-  SwapHoriz as SwapHorizIcon,
-  AutoFixHigh as AutoFixHighIcon,
-  Handyman as HandymanIcon,
-  ModelTraining as ModelTrainingIcon,
-  Balance as BalanceIcon,
-  Bolt as BoltIcon,
-  GridView as GridViewIcon,
-} from "@mui/icons-material";
+  Box, Paper, Typography, FormControl, InputLabel, Select,
+  MenuItem, Button, Grid, useTheme, styled, SelectChangeEvent,
+  Slider, TextField, Snackbar, Alert, Chip, CircularProgress,
+  Tooltip, ToggleButton, ToggleButtonGroup, Dialog, DialogTitle,
+  DialogContent, DialogActions
+} from '@mui/material';
+import ThermostatIcon from '@mui/icons-material/Thermostat';
+import BuildIcon from '@mui/icons-material/Build';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import ModelTrainingIcon from '@mui/icons-material/ModelTraining';
+import SpeedIcon from '@mui/icons-material/Speed';
+import StopIcon from '@mui/icons-material/Stop';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import BalanceIcon from '@mui/icons-material/Balance';
+import BoltIcon from '@mui/icons-material/Bolt';
+import GridViewIcon from '@mui/icons-material/GridView';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import HandymanIcon from '@mui/icons-material/Handyman';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
 
-import { styled, useTheme } from "@mui/material/styles";
+import { monitoringService } from './monitoringService';
+import DebugConsole from '../components/DebugConsole';
+import MonitoringSystem from './monitoringSystem';
+import { Weights, AlertState, MonitoringStatus } from '../types/monitoring';
 
-// Types
-interface MonitoringStatus {
-  statuses: {
-    migration: { is_running: boolean };
-    environmental: { is_running: boolean };
-    preventive: { is_running: boolean };
-  };
-}
+// ------ Styled Components -------
+const StyledCard = styled(Paper)(({ theme }) => ({ /* styles */ }));
+const StyledSelect = styled(Select)(({ theme }) => ({ /* styles */ }));
+const SectionTitle = styled(Typography)(({ theme }) => ({ /* styles */ }));
+const IconWrapper = styled(Box)(({ theme }) => ({ /* styles */ }));
+const WeightSlider = styled(Slider)(({ theme }) => ({ /* styles */ }));
+const WeightInput = styled(TextField)(({ theme }) => ({ /* styles */ }));
+const StatusChip = styled(Chip)(({ theme }) => ({ /* styles */ }));
+const StatusCard = styled(Box)(({ theme }) => ({ /* styles */ }));
+const StatusIndicator = styled('div')(({ theme }) => ({ /* styles */ }));
 
-type Weights = {
-  energy: number;
-  balance: number;
-  overload: number;
-  allocation: number;
+// ------ Constants -------
+const timeOptions = ['1', '5'];
+const stepOptions = ['3', ...Array.from({ length: 47 }, (_, i) => (i + 4).toString())];
+const modelTypes = ['lstm'];
+const migrationMethodTypes = ['mathematical', 'AI'];
+const migrationModelTypes = {
+  direct: ['ssl'],
+  indirect: ['xgboost', 'mul_reg']
 };
 
-const Home: React.FC = () => {
+const Home = () => {
   const theme = useTheme();
+  const savedState = localStorage.getItem('optimizationState');
+  const parsedState = savedState ? JSON.parse(savedState) : null;
 
-  // State definitions
-  const [monitoringStatus, setMonitoringStatus] =
-    useState<MonitoringStatus | null>(null);
-  const [isMonitoring, setIsMonitoring] = useState(false);
-  const [isStatusLoading, setIsStatusLoading] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  // ----- States -----
+  const [hasSelectedOptimization, setHasSelectedOptimization] = useState(!!parsedState);
+  const [showOptimizationDialog, setShowOptimizationDialog] = useState(false);
+  const [blockList, setBlockList] = useState<string[]>(parsedState?.unselectedVMs || []);
+  const [selectedVMs, setSelectedVMs] = useState<string[]>(parsedState?.selectedVMs || []);
+  const [optimizationState, setOptimizationState] = useState(parsedState || {
+    selectedVMs: [],
+    unselectedVMs: []
+  });
 
-  const [envTimeUnit, setEnvTimeUnit] = useState<string>("1");
-  const [envSteps, setEnvSteps] = useState<string>("5");
-  const [envModelType, setEnvModelType] = useState<string>("modelA");
+  const [envTimeUnit, setEnvTimeUnit] = useState<string>('1');
+  const [envSteps, setEnvSteps] = useState<string>('3');
+  const [envModelType, setEnvModelType] = useState<string>('lstm');
 
-  const [prevTimeUnit, setPrevTimeUnit] = useState<string>("1");
-  const [prevSteps, setPrevSteps] = useState<string>("5");
-  const [prevModelType, setPrevModelType] = useState<string>("modelA");
+  const [prevTimeUnit, setPrevTimeUnit] = useState<string>('1');
+  const [prevSteps, setPrevSteps] = useState<string>('3');
+  const [prevModelType, setPrevModelType] = useState<string>('lstm');
 
-  const [migrationMode, setMigrationMode] = useState<"auto" | "semiauto">(
-    "auto"
-  );
-  const [migrationTime, setMigrationTime] = useState<string>("1");
-  const [migrationMethod, setMigrationMethod] =
-    useState<string>("mathematical");
-  const [estimationMethod, setEstimationMethod] = useState<
-    "direct" | "indirect"
-  >("direct");
-  const [migrationModel, setMigrationModel] = useState<string>("modelX");
+  const [migrationTime, setMigrationTime] = useState<string>('5');
+  const [migrationMethod, setMigrationMethod] = useState<string>('mathematical');
+  const [estimationMethod, setEstimationMethod] = useState<'direct' | 'indirect'>('indirect');
+  const [migrationModel, setMigrationModel] = useState<string>('mul_reg');
+  const [migrationMode, setMigrationMode] = useState<'auto' | 'semiauto'>('auto');
 
   const [weights, setWeights] = useState<Weights>({
     energy: 25,
     balance: 25,
     overload: 25,
-    allocation: 25,
+    allocation: 25
   });
 
-  const [weightError, setWeightError] = useState(false);
+  const [isMonitoring, setIsMonitoring] = useState(false);
   const [isValid, setIsValid] = useState(true);
+  const [weightError, setWeightError] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [alert, setAlert] = useState<AlertState>({
+    open: false, message: '', severity: 'info'
+  });
 
-  const [blockList, setBlockList] = useState<string[]>([]);
+  const [monitoringStatus, setMonitoringStatus] = useState<MonitoringStatus | null>(null);
+  const [isStatusLoading, setIsStatusLoading] = useState(false);
   const [lastConfigSent, setLastConfigSent] = useState<any>(null);
 
-  const [alert, setAlert] = useState<{
-    open: boolean;
-    message: string;
-    severity: "error" | "success" | "info";
-  }>({
-    open: false,
-    message: "",
-    severity: "info",
-  });
+  // New state for dialog visibility
+  const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Helper function to show alerts
-  const showAlert = (
-    message: string,
-    severity: "error" | "success" | "info"
+  // ---------- Scroll Cleanup ----------
+  useEffect(() => {
+    return () => {
+      monitoringService.stopStatusPolling();
+    };
+  }, []);
+
+  // Add shimmer keyframes (Only Once)
+  useEffect(() => {
+    const shimmerKeyframes = `
+      @keyframes shimmer {
+        0% { background-position: 100% 0; }
+        100% { background-position: 0 0; }
+      }
+    `;
+    const styleId = 'shimmer-animation-style';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.innerHTML = shimmerKeyframes;
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  const validateWeightSum = useCallback(() => {
+    const sum = Object.values(weights).reduce((a, b) => a + Number(b), 0);
+    return Math.abs(sum - 100) < 0.001;
+  }, [weights]);
+
+  useEffect(() => {
+    const isValidSum = validateWeightSum();
+    setIsValid(isValidSum);
+    setWeightError(!isValidSum);
+  }, [weights, validateWeightSum]);
+
+  const handleManualWeightChange = (type: keyof Weights) => (
+    event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    setAlert({ open: true, message, severity });
-  };
-  const handleCloseAlert = () => setAlert((a) => ({ ...a, open: false }));
+    const val = event.target.value === '' ? 0 : parseInt(event.target.value);
+    if (isNaN(val)) return;
 
-  // Function to check if any service is running
-  const isAnyServiceRunning = (status: MonitoringStatus | null) => {
-    if (!status) return false;
-    return (
-      status.statuses.migration.is_running ||
-      status.statuses.environmental.is_running ||
-      status.statuses.preventive.is_running
-    );
+    setWeights(prev => ({
+      ...prev,
+      [type]: Math.min(100, Math.max(0, Math.round(val)))
+    }));
   };
 
-  // Force status update function (async)
-  const forceStatusUpdate = async (): Promise<MonitoringStatus | null> => {
+  const handleSliderChange = (type: keyof Weights) => (_: Event, newValue: number | number[]) => {
+    const roundedMain = Math.round(newValue as number);
+    const others = Object.keys(weights).filter(k => k !== type) as Array<keyof Weights>;
+    const remaining = 100 - roundedMain;
+    const oldOtherSum = others.reduce((sum, key) => sum + weights[key], 0);
+
+    const scaled = oldOtherSum > 0
+      ? others.reduce((acc, key) => ({
+        ...acc,
+        [key]: Math.round(weights[key] * (remaining / oldOtherSum))
+      }), {} as Partial<Weights>)
+      : Object.fromEntries(others.map(k => [k, Math.floor(remaining / others.length)]));
+
+    setWeights({
+      ...weights,
+      [type]: roundedMain,
+      ...scaled
+    });
+  };
+
+  const isAnyServiceRunning = (status: MonitoringStatus | null): boolean =>
+    status
+      ? status.statuses.migration.is_running ||
+        status.statuses.environmental.is_running ||
+        status.statuses.preventive.is_running
+      : false;
+
+  const forceStatusUpdate = async () => {
     try {
       setIsStatusLoading(true);
       const status = await monitoringService.getMonitoringStatus();
       setMonitoringStatus(status);
-
-      const anyRunning = isAnyServiceRunning(status);
-      if (anyRunning !== isMonitoring) {
-        setIsMonitoring(anyRunning);
-      }
-      return status;
-    } catch (error) {
-      console.error("Error in force status update:", error);
-      return null;
+      const any = isAnyServiceRunning(status);
+      if (any !== isMonitoring) setIsMonitoring(any);
+    } catch (err) {
+      console.error('Force Status Update Error:', err);
     } finally {
       setIsStatusLoading(false);
     }
   };
 
-  // Select change handler with proper typing
-  const handleSelectChange = (event: SelectChangeEvent<string>) => {
+  const handleOptimizationSaved = (unselectedVMs: string[], selectedVMs: string[]) => {
+    const newState = { selectedVMs, unselectedVMs };
+    setBlockList(unselectedVMs);
+    setSelectedVMs(selectedVMs);
+    setOptimizationState(newState);
+    setHasSelectedOptimization(true);
+    localStorage.setItem('optimizationState', JSON.stringify(newState));
+  };
+
+  const handleSelectChange = (event: SelectChangeEvent<unknown>) => {
     const { name, value } = event.target;
+    const v = value as string;
     switch (name) {
-      case "envTimeUnit":
-        setEnvTimeUnit(value);
-        break;
-      case "envSteps":
-        setEnvSteps(value);
-        break;
-      case "envModelType":
-        setEnvModelType(value);
-        break;
-      case "prevTimeUnit":
-        setPrevTimeUnit(value);
-        break;
-      case "prevSteps":
-        setPrevSteps(value);
-        break;
-      case "prevModelType":
-        setPrevModelType(value);
-        break;
-      case "migrationTime":
-        setMigrationTime(value);
-        break;
-      case "migrationMethod":
-        setMigrationMethod(value);
-        break;
-      case "estimationMethod":
-        setEstimationMethod(value as "direct" | "indirect");
-        break;
-      case "migrationModel":
-        setMigrationModel(value);
-        break;
-      default:
-        break;
+      case 'envTimeUnit': return setEnvTimeUnit(v);
+      case 'envSteps': return setEnvSteps(v);
+      case 'envModelType': return setEnvModelType(v);
+      case 'prevTimeUnit': return setPrevTimeUnit(v);
+      case 'prevSteps': return setPrevSteps(v);
+      case 'prevModelType': return setPrevModelType(v);
+      case 'migrationTime': return setMigrationTime(v);
+      case 'migrationMethod': return setMigrationMethod(v);
+      case 'migrationModel': return setMigrationModel(v);
+      case 'estimationMethod':
+        setEstimationMethod(v as 'direct' | 'indirect');
+        return setMigrationModel(migrationModelTypes[v as 'direct' | 'indirect'][0]);
     }
   };
 
-  // Migration mode toggle handler
-  const handleMigrationModeChange = (
-    event: React.MouseEvent<HTMLElement>,
-    newMode: "auto" | "semiauto" | null
-  ) => {
-    if (newMode !== null) setMigrationMode(newMode);
+  const showAlert = (message: string, severity: AlertState['severity'] = 'info') => {
+    setAlert({ open: true, message, severity });
+  };
+  const handleCloseAlert = () => setAlert(prev => ({ ...prev, open: false }));
+
+  const handleSaveClick = () => {
+    try {
+      // Validate before saving
+      if (!validateWeightSum()) {
+        showAlert('Please ensure weights sum to 100', 'error');
+        return;
+      }
+
+      const config = {
+        envTimeUnit,
+        envSteps,
+        envModelType,
+        prevTimeUnit,
+        prevSteps,
+        prevModelType,
+        migrationTime,
+        migrationMethod,
+        migrationModel,
+        weights
+      };
+
+      // Save to localStorage
+      localStorage.setItem('monitoringConfig', JSON.stringify(config));
+      setLastConfigSent(config);
+      
+      // Show success and close dialog
+      showAlert('Configuration saved successfully!', 'success');
+      setDialogOpen(false);
+      
+    } catch (error) {
+      console.error('Save failed:', error);
+      showAlert('Failed to save configuration', 'error');
+    }
   };
 
-  // Weight change handlers (example, implement your logic)
-  const handleSliderChange =
-    (key: keyof Weights) => (event: Event, newValue: number | number[]) => {
-      const value = Array.isArray(newValue) ? newValue[0] : newValue;
-      setWeights((prev) => {
-        const newWeights = { ...prev, [key]: value };
-        validateWeights(newWeights);
-        return newWeights;
-      });
-    };
+  const renderSaveDialog = () => (
+    <Dialog 
+      open={dialogOpen} 
+      onClose={() => setDialogOpen(false)}
+      maxWidth="md"
+      fullWidth
+    >
+      <DialogTitle>Save Configuration</DialogTitle>
+      <DialogContent>
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="body1">
+            Are you sure you want to save these settings?
+          </Typography>
+          <Box sx={{ mt: 3 }}>
+            {/* Display summary of current settings */}
+            <Typography variant="subtitle1">Current Configuration:</Typography>
+            <Typography variant="body2">Environment Time Unit: {envTimeUnit}</Typography>
+            <Typography variant="body2">Steps: {envSteps}</Typography>
+            <Typography variant="body2">Model Type: {envModelType}</Typography>
+            {/* Add more settings display as needed */}
+          </Box>
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button 
+          onClick={() => setDialogOpen(false)}
+          color="secondary"
+          startIcon={<ErrorIcon />}
+        >
+          Cancel
+        </Button>
+        <Button 
+          onClick={handleSaveClick}
+          color="primary"
+          variant="contained"
+          startIcon={<CheckCircleIcon />}
+        >
+          Confirm Save
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 
-  const handleManualWeightChange =
-    (key: keyof Weights) => (event: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number(event.target.value);
-      setWeights((prev) => {
-        const newWeights = { ...prev, [key]: value };
-        validateWeights(newWeights);
-        return newWeights;
-      });
-    };
-
-  // Validation function for weights
-  const validateWeights = (weights: Weights) => {
-    const total =
-      weights.energy + weights.balance + weights.overload + weights.allocation;
-    const valid = total === 100;
-    setIsValid(valid);
-    setWeightError(!valid);
-  };
-
-  // useEffect to poll monitoring status (similar to your part 2)
   useEffect(() => {
-    const fetchAndUpdateStatus = async () => {
+    const fetchStatus = async () => {
       try {
-        if (!monitoringStatus) {
-          setIsStatusLoading(true);
-        }
+        if (!monitoringStatus) setIsStatusLoading(true);
         const status = await monitoringService.getMonitoringStatus();
         setMonitoringStatus(status);
-        const anyRunning = isAnyServiceRunning(status);
-        if (anyRunning !== isMonitoring) {
-          setIsMonitoring(anyRunning);
-        }
-      } catch (error) {
-        console.error("Error fetching monitoring status:", error);
+        setIsMonitoring(isAnyServiceRunning(status));
+      } catch (err) {
+        console.error('Status Polling Error:', err);
       } finally {
         setIsStatusLoading(false);
       }
     };
 
-    fetchAndUpdateStatus();
-    const intervalId = setInterval(fetchAndUpdateStatus, 3000);
-    return () => clearInterval(intervalId);
-  }, [isMonitoring, monitoringStatus]);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
+  }, [monitoringStatus]);
 
-  // Render function for status chips
-  const renderStatusChip = (isRunning: boolean | undefined) => {
-    if (isRunning === undefined) {
-      return <StatusChip label="Unknown" className="stopped" size="small" />;
-    }
-    return (
-      <StatusChip
-        label={isRunning ? "Running" : "Stopped"}
-        className={isRunning ? "running" : "stopped"}
-        size="small"
-      />
-    );
-  };
-
-  // ...Your remaining UI rendering code, including buttons and dialog
-
+  // ------ UI Rendering ------
   return (
-    <Box sx={{ height: "calc(100vh - 80px)", overflow: "auto" }}>
-      {/* Your conditional rendering based on optimization selection */}
-      {/* ... */}
-      <Typography
-        variant="subtitle1"
-        sx={{
-          fontWeight: "bold",
-          mb: 1,
-          color: isAnyServiceRunning(monitoringStatus)
-            ? "success.main"
-            : "text.secondary",
-          display: "flex",
-          alignItems: "center",
-          gap: 1,
-        }}
+    <Box sx={{ height: 'calc(100vh - 80px)', overflow: 'auto' }}>
+      {/* Your existing layout components... */}
+
+      {/* Add a save button somewhere in your UI */}
+      <Button
+        variant="contained"
+        color="primary"
+        onClick={() => setDialogOpen(true)}
+        sx={{ position: 'fixed', bottom: 20, right: 20 }}
+        startIcon={<SaveIcon />}
       >
-        {isAnyServiceRunning(monitoringStatus) ? (
-          <>
-            <CheckCircleIcon color="success" /> Monitoring is Active
-          </>
-        ) : (
-          <>
-            <ErrorIcon color="error" /> Monitoring is Inactive
-          </>
-        )}
-      </Typography>
+        Save Configuration
+      </Button>
 
-      <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={async () => {
-            try {
-              setIsLoading(true);
-              await forceStatusUpdate();
+      {/* Render the dialog */}
+      {renderSaveDialog()}
 
-              if (isAnyServiceRunning(monitoringStatus)) {
-                showAlert("Monitoring is already running", "info");
-                setIsLoading(false);
-                return;
-              }
-              if (!isValid) {
-                showAlert(
-                  "Please ensure weights sum to 100% before starting monitoring",
-                  "error"
-                );
-                setIsLoading(false);
-                return;
-              }
-
-              // Build config object with stringified values
-              const config = {
-                migration: {
-                  script_time_unit: migrationTime.toString(),
-                  virtual_machine_estimation: {
-                    estimation_method: estimationMethod,
-                    model_type: migrationModel,
-                  },
-                  migration_advices: {
-                    migration_method:
-                      migrationMethod === "mathematical"
-                        ? "migration_advices_la"
-                        : "migration_advices_llm",
-                    migration_weights: {
-                      power: (weights.energy / 100).toString(),
-                      balance: (weights.balance / 100).toString(),
-                      overload: (weights.overload / 100).toString(),
-                      allocation: (weights.allocation / 100).toString(),
-                    },
-                  },
-                  block_list: blockList,
-                },
-                environmental: {
-                  number_of_steps: envSteps.toString(),
-                  script_time_unit: envTimeUnit.toString(),
-                  model_type: envModelType,
-                },
-                preventive: {
-                  number_of_steps: prevSteps.toString(),
-                  script_time_unit: prevTimeUnit.toString(),
-                  model_type: prevModelType,
-                },
-              };
-
-              console.log(
-                "Final config JSON:",
-                JSON.stringify(config, null, 2)
-              );
-              setLastConfigSent(config);
-
-              await monitoringService.startMonitoring(config);
-              await forceStatusUpdate();
-              setTimeout(async () => {
-                await forceStatusUpdate();
-              }, 1000);
-              showAlert("Monitoring started successfully", "success");
-            } catch (startError) {
-              console.error("Error starting monitoring:", startError);
-              showAlert(
-                startError instanceof Error
-                  ? startError.message
-                  : "Failed to start monitoring",
-                "error"
-              );
-              await forceStatusUpdate();
-            } finally {
-              setIsLoading(false);
-            }
-          }}
-          disabled={isLoading || isAnyServiceRunning(monitoringStatus)}
-          sx={{
-            minWidth: 200,
-            height: 56,
-            borderRadius: 3,
-            textTransform: "none",
-            fontSize: "1.1rem",
-            fontWeight: 600,
-            boxShadow: theme.shadows[4],
-            position: "relative",
-            overflow: "hidden",
-            "&:hover": {
-              boxShadow: theme.shadows[8],
-              transform: "translateY(-2px)",
-              backgroundColor: theme.palette.primary.dark,
-            },
-            "&::before": {
-              content: '""',
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
-              opacity: 0.8,
-            },
-            transition: "all 0.3s ease-in-out",
-            px: 4,
-            display: "flex",
-            alignItems: "center",
-            gap: 1,
-            "&.Mui-disabled": {
-              backgroundColor: isAnyServiceRunning(monitoringStatus)
-                ? theme.palette.grey[400]
-                : theme.palette.action.disabledBackground,
-              "&::after": {
-                content: '""',
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                backgroundColor: "rgba(255, 255, 255, 0.6)",
-                backdropFilter: "blur(2px)",
-                zIndex: 0,
-              },
-              "&::before": {
-                opacity: 0.3,
-              },
-            },
-          }}
-        >
-          <Box
-            component="span"
-            sx={{
-              display: "inline-flex",
-              alignItems: "center",
-              position: "relative",
-              zIndex: 1,
-              "& .MuiSvgIcon-root": {
-                fontSize: "1.5rem",
-                mr: 1,
-              },
-            }}
-          >
-            <PlayArrowIcon /> Start Monitoring
-          </Box>
-        </Button>
-
-        <Button
-          variant="contained"
-          color="error"
-          onClick={async () => {
-            try {
-              setIsLoading(true);
-              await forceStatusUpdate();
-
-              if (!isAnyServiceRunning(monitoringStatus)) {
-                showAlert("Monitoring is not running", "info");
-                setIsLoading(false);
-                return;
-              }
-
-              await monitoringService.stopMonitoring();
-              await forceStatusUpdate();
-              setTimeout(async () => {
-                await forceStatusUpdate();
-              }, 1000);
-              showAlert("Monitoring stopped successfully", "success");
-            } catch (stopError) {
-              console.error("Error stopping monitoring:", stopError);
-              showAlert(
-                stopError instanceof Error
-                  ? stopError.message
-                  : "Failed to stop monitoring",
-                "error"
-              );
-              await forceStatusUpdate();
-            } finally {
-              setIsLoading(false);
-            }
-          }}
-          disabled={isLoading || !isAnyServiceRunning(monitoringStatus)}
-          sx={{
-            minWidth: 200,
-            height: 56,
-            borderRadius: 3,
-            textTransform: "none",
-            fontSize: "1.1rem",
-            fontWeight: 600,
-            boxShadow: theme.shadows[4],
-            position: "relative",
-            overflow: "hidden",
-            "&:hover": {
-              boxShadow: theme.shadows[8],
-              transform: "translateY(-2px)",
-              backgroundColor: theme.palette.error.dark,
-            },
-            "&::before": {
-              content: '""',
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              background: `linear-gradient(45deg, ${theme.palette.error.main}, ${theme.palette.error.dark})`,
-              opacity: 0.8,
-            },
-            transition: "all 0.3s ease-in-out",
-            px: 4,
-            display: "flex",
-            alignItems: "center",
-            gap: 1,
-            "&.Mui-disabled": {
-              backgroundColor: !isAnyServiceRunning(monitoringStatus)
-                ? theme.palette.grey[400]
-                : theme.palette.action.disabledBackground,
-              "&::after": {
-                content: '""',
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                backgroundColor: "rgba(255, 255, 255, 0.6)",
-                backdropFilter: "blur(2px)",
-                zIndex: 0,
-              },
-              "&::before": {
-                opacity: 0.3,
-              },
-            },
-          }}
-        >
-          <Box
-            component="span"
-            sx={{
-              display: "inline-flex",
-              alignItems: "center",
-              position: "relative",
-              zIndex: 1,
-              "& .MuiSvgIcon-root": {
-                fontSize: "1.5rem",
-                mr: 1,
-              },
-            }}
-          >
-            <StopIcon /> Stop Monitoring
-          </Box>
-        </Button>
-      </Box>
-
-      {/* Rest of your code: StatusCard, Dialog, Snackbar, DebugConsole etc. */}
+      {/* Existing Snackbar */}
+      <Snackbar
+        open={alert.open}
+        autoHideDuration={6000}
+        onClose={handleCloseAlert}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleCloseAlert} severity={alert.severity} variant="filled">
+          {alert.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
